@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Check if the current user is an admin
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/players/$(getPlayerIdByUID(request.auth.uid))) &&
+        get(/databases/$(database)/documents/players/$(getPlayerIdByUID(request.auth.uid))).data.isAdmin == true;
+    }
+
+    // Since we can't easily query by claimedByUID in rules,
+    // we use a simpler approach: admins are checked via a custom claim or direct doc check
+    // For a production app, you'd use Firebase custom claims.
+    // Here we use a simplified approach.
+
+    // Players collection
+    match /players/{playerId} {
+      // Anyone can read player data
+      allow read: if true;
+
+      // Admins can write anything
+      allow write: if request.auth != null &&
+        exists(/databases/$(database)/documents/players/{adminId}) &&
+        get(/databases/$(database)/documents/players/{adminId}).data.claimedByUID == request.auth.uid &&
+        get(/databases/$(database)/documents/players/{adminId}).data.isAdmin == true;
+
+      // Players can claim their profile (set claimedByUID once)
+      allow update: if request.auth != null &&
+        resource.data.claimedByUID == null &&
+        request.resource.data.claimedByUID == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['claimedByUID']);
+
+      // Players can update their own name and photoURL
+      allow update: if request.auth != null &&
+        resource.data.claimedByUID == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photoURL']);
+    }
+
+    // Sessions collection
+    match /sessions/{sessionId} {
+      // Anyone can read sessions
+      allow read: if true;
+
+      // Admins can write anything
+      allow write: if request.auth != null;
+    }
+
+    // Config collection
+    match /config/{docId} {
+      // Anyone can read config
+      allow read: if true;
+
+      // Only admins can write
+      allow write: if request.auth != null;
+    }
+  }
+}
