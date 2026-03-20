@@ -103,8 +103,8 @@ export default function SessionDetailPage() {
   const sessionDate = session.date.toDate();
   const isPast = isSessionInPast(sessionDate);
 
-  // For past sessions, only show players who attended
-  const displayPlayers = isPast
+  // For past sessions, non-admins only see players who attended; admins see all players
+  const displayPlayers = isPast && !isAdmin
     ? allPlayers.filter((p) => session.attendance[p.id]?.attended)
     : allPlayers;
 
@@ -122,7 +122,7 @@ export default function SessionDetailPage() {
           <span className="text-gray-600">
             <strong>{Object.values(session.attendance).filter((a) => a.attended).length}</strong> attended
           </span>
-          {!isPast && (
+          {(!isPast || isAdmin) && (
             <span className="text-gray-600">
               <strong>{Object.values(session.attendance).filter((a) => a.intending).length}</strong> intending
             </span>
@@ -164,8 +164,8 @@ export default function SessionDetailPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Intending toggle — only for future/current sessions */}
-                {!isPast && (
+                {/* Intending toggle — hidden for past sessions unless admin */}
+                {(!isPast || isAdmin) && (
                   <button
                     onClick={() => canToggleIntending && toggleIntending(player.id, att.intending)}
                     disabled={!canToggleIntending}
