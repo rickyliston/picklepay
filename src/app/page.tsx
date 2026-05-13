@@ -6,6 +6,7 @@ import { doc, getDoc, onSnapshot, setDoc, Timestamp, updateDoc } from 'firebase/
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { getCurrentOrNextSession, formatSessionDate, getSessionId } from '@/lib/sessions';
+import { isDateInAnyTerm, getCurrentTerm } from '@/lib/terms';
 import { Session } from '@/lib/types';
 import MembershipBanner from '@/components/MembershipBanner';
 import InstallPrompt from '@/components/InstallPrompt';
@@ -22,9 +23,15 @@ export default function HomePage() {
 
   const { date: nextDate, sessionNumber } = getCurrentOrNextSession();
   const sessionId = getSessionId(nextDate);
+  const inTerm = isDateInAnyTerm(nextDate);
 
-  // Ensure the next session document exists, create it if not
+  // Ensure the next session document exists, create it if not (only during term)
   useEffect(() => {
+    if (!inTerm) {
+      setLoadingSession(false);
+      return;
+    }
+
     const sessionRef = doc(db, 'sessions', sessionId);
     let unsub: (() => void) | undefined;
 
@@ -47,7 +54,7 @@ export default function HomePage() {
     })();
 
     return () => { unsub?.(); };
-  }, [sessionId, sessionNumber, nextDate]);
+  }, [sessionId, sessionNumber, nextDate, inTerm]);
 
   const intendingPlayers = session
     ? Object.entries(session.attendance)
@@ -97,79 +104,89 @@ export default function HomePage() {
       {showMembershipBanner && <MembershipBanner />}
 
       {/* Next Session Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Next Session</h2>
-            <p className="text-lg font-bold text-gray-900 mt-1">Session #{sessionNumber}</p>
-            <p className="text-sm text-gray-600">{formatSessionDate(nextDate)}</p>
+      {inTerm ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">Next Session</h2>
+              <p className="text-lg font-bold text-gray-900 mt-1">Session #{sessionNumber}</p>
+              <p className="text-sm text-gray-600">{formatSessionDate(nextDate)}</p>
+            </div>
+            <div className="bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-full text-sm font-semibold">
+              {intendingPlayers.length} coming
+            </div>
           </div>
-          <div className="bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-full text-sm font-semibold">
-            {intendingPlayers.length} coming
-          </div>
+
+          {playerProfile && (
+            <button
+              onClick={handleToggleIntending}
+              className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${
+                isIntending
+                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {isIntending ? "✓ I'm coming!" : "I'm coming this week"}
+            </button>
+          )}
+
+          {!user && (
+            <Link
+              href="/login"
+              className="block w-full text-center py-3 bg-emerald-600 text-white rounded-xl font-semibold text-sm hover:bg-emerald-700 transition-colors"
+            >
+              Sign in to RSVP
+            </Link>
+          )}
+
+          {user && !playerProfile && (
+            <Link
+              href="/profile"
+              className="block w-full text-center py-3 bg-gray-100 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-200 transition-colors"
+            >
+              Claim your profile to RSVP
+            </Link>
+          )}
         </div>
-
-        {playerProfile && (
-          <button
-            onClick={handleToggleIntending}
-            className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${
-              isIntending
-                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {isIntending ? "✓ I'm coming!" : "I'm coming this week"}
-          </button>
-        )}
-
-        {!user && (
-          <Link
-            href="/login"
-            className="block w-full text-center py-3 bg-emerald-600 text-white rounded-xl font-semibold text-sm hover:bg-emerald-700 transition-colors"
-          >
-            Sign in to RSVP
-          </Link>
-        )}
-
-        {user && !playerProfile && (
-          <Link
-            href="/profile"
-            className="block w-full text-center py-3 bg-gray-100 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-200 transition-colors"
-          >
-            Claim your profile to RSVP
-          </Link>
-        )}
-      </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
+          <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide">School Holidays</h2>
+          <p className="text-lg font-bold text-gray-900 mt-1">No sessions during the break</p>
+          <p className="text-sm text-gray-500 mt-1">Sessions resume when the next school term starts.</p>
+        </div>
+      )}
 
       {/* Who's Coming */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
-        <h3 className="font-semibold text-gray-900 mb-3">
-          Who&apos;s Coming ({intendingPlayers.length})
-        </h3>
-        {loadingSession ? (
-          <SkeletonList count={3} />
-        ) : intendingPlayers.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4">No one has RSVP&apos;d yet</p>
-        ) : (
-          <div className="space-y-2">
-            {intendingPlayers.map((p) =>
-              p ? (
-                <div key={p.id} className="flex items-center gap-3 py-1">
-                  <Avatar src={p.photoURL} name={p.name} size="sm" />
-                  <span className="text-sm font-medium text-gray-900">{p.name}</span>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      p.isMember ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'
-                    }`}
-                  >
-                    {p.isMember ? 'Member' : 'Guest'}
-                  </span>
-                </div>
-              ) : null
-            )}
-          </div>
-        )}
-      </div>
+      {inTerm && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4">
+          <h3 className="font-semibold text-gray-900 mb-3">
+            Who&apos;s Coming ({intendingPlayers.length})
+          </h3>
+          {loadingSession ? (
+            <SkeletonList count={3} />
+          ) : intendingPlayers.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">No one has RSVP&apos;d yet</p>
+          ) : (
+            <div className="space-y-2">
+              {intendingPlayers.map((p) =>
+                p ? (
+                  <div key={p.id} className="flex items-center gap-3 py-1">
+                    <Avatar src={p.photoURL} name={p.name} size="sm" />
+                    <span className="text-sm font-medium text-gray-900">{p.name}</span>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        p.isMember ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'
+                      }`}
+                    >
+                      {p.isMember ? 'Member' : 'Guest'}
+                    </span>
+                  </div>
+                ) : null
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Admin Quick Actions */}
       {isAdmin && (
